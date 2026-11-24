@@ -330,6 +330,34 @@ client.soroban.invoke(params, (xdr) =>
 )
 ```
 
+#### Authorized multi-contract invocations
+
+Multi-step contract workflows cross authorization boundaries: one step may
+require signer A to authorize a call that nests into another contract, the next
+may require signer B. Surface the authorization each step requires *before* any
+network call, gate each step on explicit signer approval, and verify the final
+result by collecting each confirmed hash:
+
+```ts
+import {
+  describeRequiredAuth,
+  runAuthorizedWorkflow,
+  createInvoke,
+} from "sorokit-core";
+
+// Each step carries the contract method metadata that declares requiredSigners.
+const auth = describeRequiredAuth(steps);          // → per-step requiredSigners + authorized flag
+const invoke = createInvoke({ networkConfig, rpcUrl, horizonUrl, adapter });
+const result = await runAuthorizedWorkflow(steps, { approval, invoke });
+// ok  → result.data.txHashes (each hash is a confirmed, verified result)
+// err → INVALID_AUTH (missing signer, before any network call)
+//      | WALLET_SIGN_REJECTED (signer declined approval, before invoking)
+```
+
+See [`examples/authorized-multi-contract`](examples/authorized-multi-contract)
+for the full workflow, both failure cases, and how to wire `createInvoke` to a
+wallet.
+
 #### Contract deployment
 
 `buildContractDeploy` validates its configuration before any network call, so a
@@ -688,6 +716,7 @@ if (balance.status === "ok") console.log("Balance:", balance.data.result);
 | Example | Shows |
 | --- | --- |
 | [`examples/router-swap`](examples/router-swap) | DEX swap: path discovery, quote, sign, submit, track |
+| [`examples/authorized-multi-contract`](examples/authorized-multi-contract) | Authorized multi-contract workflow: surface required auth, gate on signer approval, verify each confirmed result; failure cases for missing and rejected authorization |
 | [`examples/react-wallet-connect`](examples/react-wallet-connect) | React: connect wallet, fetch balances, build + sign + submit payment |
 | [`examples/vue-soroban`](examples/vue-soroban) | Vue 3: contract method selection, invoke with progress, account streaming |
 | [`examples/next-serverless`](examples/next-serverless) | Next.js + Lambda: server-side signing, batch account ops, Vercel/AWS handler |
