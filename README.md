@@ -474,6 +474,35 @@ ac.abort();
 
 The same pattern applies to `client.transaction.stream()`.
 
+### Contract event cursor recovery
+
+`subscribeContractEvents` and `streamContractEvents` track the last ledger they
+processed in memory. To resume after a restart, pass the persisted ledger as
+`startLedger` — the subscription recovers every event after it, bounded by
+`recoveryWindowMs` so a restart never replays an unbounded history and never
+re-emits the ledger the consumer already processed:
+
+```ts
+import { subscribeContractEvents } from "sorokit-core/soroban";
+
+const lastLedger = await loadCursor();           // persisted across restarts
+const unsub = subscribeContractEvents(
+  "C...",
+  undefined,
+  (events) => {
+    const max = events.reduce((m, e) => (typeof e.ledger === "number" && e.ledger > m ? e.ledger : m), lastLedger ?? 0);
+    saveCursor(max);                              // advance the durable cursor after handling the batch
+  },
+  { horizonUrl, startLedger: lastLedger, recoveryWindowMs: 60_000 },
+);
+```
+
+Persist the cursor atomically with your downstream processing so it only
+advances once the batch is durably recorded, and deduplicate by event `id`
+across restarts if your sink is not idempotent. The
+[`examples/event-cursor-recovery`](examples/event-cursor-recovery) example wraps
+this into a `createRestartableConsumer` with a pluggable cursor store.
+
 ### Real-time transaction SSE
 
 Transaction streams can use Horizon Server-Sent Events to avoid polling latency.
@@ -691,6 +720,7 @@ if (balance.status === "ok") console.log("Balance:", balance.data.result);
 | [`examples/react-wallet-connect`](examples/react-wallet-connect) | React: connect wallet, fetch balances, build + sign + submit payment |
 | [`examples/vue-soroban`](examples/vue-soroban) | Vue 3: contract method selection, invoke with progress, account streaming |
 | [`examples/next-serverless`](examples/next-serverless) | Next.js + Lambda: server-side signing, batch account ops, Vercel/AWS handler |
+| [`examples/event-cursor-recovery`](examples/event-cursor-recovery) | Restartable contract event consumer: persist a ledger cursor, resume from it after a restart without losing events or replaying an unbounded history |
 
 Examples are type-checked against the SDK source with `npm run typecheck:examples`.
 
